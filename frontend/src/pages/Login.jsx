@@ -29,14 +29,19 @@ const Login = () => {
     
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession()
+      console.log('Check session:', session?.user?.email)
+      
       if (session) {
         const userRole = localStorage.getItem('user_role')
-        if (userRole === 'admin') navigate('/admin', { replace: true })
-        else if (userRole === 'premium' || userRole === 'pro' || userRole === 'free') navigate('/dashboard', { replace: true })
-        else {
-          const { data: userData } = await supabase.from('users').select('role, subscription').eq('id', session.user.id).single()
-          if (userData?.role === 'admin') navigate('/admin', { replace: true })
-          else navigate('/dashboard', { replace: true })
+        console.log('User role from storage:', userRole)
+        
+        if (userRole === 'admin') {
+          navigate('/admin', { replace: true })
+        } else if (userRole === 'premium' || userRole === 'pro' || userRole === 'free') {
+          navigate('/dashboard', { replace: true })
+        } else {
+          // Default to dashboard
+          navigate('/dashboard', { replace: true })
         }
       }
     }
@@ -47,44 +52,70 @@ const Login = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault()
-    if (!formData.email || !formData.password) { toast.error('Email dan password harus diisi'); return; }
+    if (!formData.email || !formData.password) {
+      toast.error('Email dan password harus diisi')
+      return
+    }
 
     setLoading(true)
     try {
+      // Cek apakah ini admin
       if (adminEmails.includes(formData.email) && formData.password === adminPassword) {
-        const { error } = await supabase.auth.signInWithPassword({ email: formData.email, password: formData.password })
+        // Login ke Supabase
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password
+        })
+        
         if (error) {
-          await supabase.auth.signUp({ email: formData.email, password: formData.password, options: { data: { full_name: formData.email.split('@')[0] } } })
+          // Jika belum punya akun, buat dulu
+          await supabase.auth.signUp({
+            email: formData.email,
+            password: formData.password,
+            options: {
+              data: { full_name: formData.email.split('@')[0] }
+            }
+          })
         }
+        
         setAdminEmail(formData.email)
         setShowWelcomeModal(true)
         setLoading(false)
         return
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({ email: formData.email, password: formData.password })
+      // Login untuk user biasa
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password
+      })
+
       if (error) throw error
 
       if (data.user) {
-        const { data: userData } = await supabase.from('users').select('subscription').eq('id', data.user.id).single()
-        const userSubscription = userData?.subscription || 'free'
-        localStorage.setItem('user_role', userSubscription)
-        toast.success(`Selamat datang ${userSubscription.toUpperCase()} User!`)
+        localStorage.setItem('user_role', 'free')
+        toast.success(`Selamat datang ${data.user.email}!`)
         navigate('/dashboard', { replace: true })
       }
     } catch (error) {
+      console.error('Login error:', error)
       toast.error(error.message || 'Login gagal')
       setLoading(false)
     }
   }
 
   const handleAccessSelection = (role) => {
+    console.log('Selected role:', role)
     setShowWelcomeModal(false)
     localStorage.setItem('user_role', role)
     localStorage.setItem('user_email', adminEmail)
     toast.success(`Masuk sebagai ${role.toUpperCase()} User`)
-    if (role === 'admin') navigate('/admin', { replace: true })
-    else navigate('/dashboard', { replace: true })
+    
+    if (role === 'admin') {
+      navigate('/admin', { replace: true })
+    } else {
+      navigate('/dashboard', { replace: true })
+    }
   }
 
   const handleRegisterClick = () => navigate('/register')
@@ -118,7 +149,7 @@ const Login = () => {
                   <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('password')}</label>
                     <div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <input type={showPassword ? 'text' : 'password'} name="password" value={formData.password} onChange={handleChange} className="w-full pl-10 pr-10 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-white focus:outline-none focus:border-primary" placeholder={language === 'id' ? 'Masukkan password' : 'Enter your password'} required />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 transform -translate-y-1/2">{showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}</button></div></div>
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2">{showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}</button></div></div>
                   <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-xl transition disabled:opacity-50"><LogIn className="w-5 h-5" />{loading ? (language === 'id' ? 'Memproses...' : 'Processing...') : t('login')}</button>
                 </div>
               </form>
