@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useLanguage } from '../contexts/LanguageContext'
 import ThemeToggle from '../components/ThemeToggle'
 import LanguageToggle from '../components/LanguageToggle'
-import { LogOut, Flame, Download, Edit3, Upload, Calendar, Settings, TrendingUp, Video, Eye, Clock, Menu, X, Crown, Star, CreditCard, AlertTriangle, Lock } from 'lucide-react'
+import { LogOut, Flame, Download, Edit3, Upload, Calendar, Settings, TrendingUp, Video, Eye, Clock, Menu, X, Crown, Star, CreditCard, AlertTriangle, Lock, DollarSign } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const Dashboard = () => {
@@ -14,6 +14,7 @@ const Dashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [logoUrl, setLogoUrl] = useState(null)
   const [userRole, setUserRole] = useState('free')
+  const [remainingDays, setRemainingDays] = useState(0)
   const navigate = useNavigate()
   const { theme } = useTheme()
   const { t, language } = useLanguage()
@@ -24,11 +25,20 @@ const Dashboard = () => {
       if (!session) { navigate('/login'); return }
       setUser(session.user)
       setLogoUrl(localStorage.getItem('app_logo'))
+      
       const storedRole = localStorage.getItem('user_role')
-      if (storedRole && (storedRole === 'premium' || storedRole === 'pro' || storedRole === 'free')) setUserRole(storedRole)
-      else {
-        const { data: userData } = await supabase.from('users').select('subscription').eq('id', session.user.id).single()
-        if (userData) { setUserRole(userData.subscription || 'free'); localStorage.setItem('user_role', userData.subscription || 'free') }
+      if (storedRole && (storedRole === 'premium' || storedRole === 'pro' || storedRole === 'free')) {
+        setUserRole(storedRole)
+      } else {
+        const { data: userData } = await supabase.from('users').select('subscription, subscription_expiry').eq('id', session.user.id).single()
+        if (userData) { 
+          setUserRole(userData.subscription || 'free')
+          localStorage.setItem('user_role', userData.subscription || 'free')
+          if (userData.subscription_expiry) {
+            const days = Math.ceil((new Date(userData.subscription_expiry) - new Date()) / (1000 * 60 * 60 * 24))
+            setRemainingDays(days > 0 ? days : 0)
+          }
+        }
       }
       setLoading(false)
     }
@@ -70,6 +80,8 @@ const Dashboard = () => {
   if (loading) return <div className="min-h-screen bg-light dark:bg-dark flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div></div>
   if (!user) return null
 
+  const isExpired = remainingDays <= 0 && userRole === 'free'
+
   return (
     <div className="min-h-screen bg-light dark:bg-dark transition-colors duration-300">
       <div className="bg-light-card dark:bg-dark-card border-b border-gray-200 dark:border-gray-800 p-4 sticky top-0 z-50">
@@ -87,8 +99,19 @@ const Dashboard = () => {
           })}</nav>
         </aside>
         <main className="flex-1 p-6 lg:p-8">
-          {userRole === 'free' && (<div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500 rounded-xl flex items-center justify-between flex-wrap gap-4"><div className="flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-yellow-500" /><span className="text-yellow-500">Masa percobaan free akan berakhir dalam 1 hari. Upgrade ke Pro atau Premium!</span></div><button onClick={handleUpgradeClick} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-red-700 transition">Upgrade Sekarang</button></div>)}
-          <div className="bg-light-card dark:bg-dark-card rounded-xl p-6 mb-8 border shadow-sm"><div className="flex items-center gap-4 flex-wrap"><img src={user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=E63946&color=fff&size=80`} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-primary" /><div className="flex-1"><div className="flex items-center gap-2 flex-wrap"><h2 className="text-2xl font-bold text-gray-800 dark:text-white">{t('welcome')}, {user.user_metadata?.full_name || user.email?.split('@')[0]}!</h2>{getSubscriptionBadge()}</div><p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{user.email}</p><p className="text-gray-400 dark:text-gray-500 text-xs mt-1">{t('auto_content')}</p></div>{(userRole === 'free') && <button onClick={handleUpgradeClick} className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2"><CreditCard className="w-4 h-4" /> Upgrade ke Pro</button>}{(userRole === 'pro') && <button onClick={handleUpgradeClick} className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-4 py-2 rounded-lg hover:opacity-90 transition flex items-center gap-2"><Crown className="w-4 h-4" /> Upgrade ke Premium</button>}</div></div>
+          {userRole === 'free' && !isExpired && (
+            <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500 rounded-xl flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-yellow-500" /><span className="text-yellow-500">Masa percobaan free tersisa {remainingDays} {t('days_remaining')}. Upgrade ke Pro ($3/bulan) atau Premium ($5/bulan)!</span></div>
+              <button onClick={handleUpgradeClick} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2"><DollarSign className="w-4 h-4" /> Upgrade Sekarang</button>
+            </div>
+          )}
+          {isExpired && (
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500 rounded-xl flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-red-500" /><span className="text-red-500">{t('account_expired')} Silakan upgrade ke Pro ($3/bulan) atau Premium ($5/bulan).</span></div>
+              <button onClick={handleUpgradeClick} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2"><DollarSign className="w-4 h-4" /> Upgrade Sekarang</button>
+            </div>
+          )}
+          <div className="bg-light-card dark:bg-dark-card rounded-xl p-6 mb-8 border shadow-sm"><div className="flex items-center gap-4 flex-wrap"><img src={user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=E63946&color=fff&size=80`} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-primary" /><div className="flex-1"><div className="flex items-center gap-2 flex-wrap"><h2 className="text-2xl font-bold text-gray-800 dark:text-white">{t('welcome')}, {user.user_metadata?.full_name || user.email?.split('@')[0]}!</h2>{getSubscriptionBadge()}</div><p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{user.email}</p><p className="text-gray-400 dark:text-gray-500 text-xs mt-1">{t('auto_content')}</p></div>{(userRole === 'free') && <button onClick={handleUpgradeClick} className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-red-700 transition flex items-center gap-2"><CreditCard className="w-4 h-4" /> Upgrade ke Pro ($3)</button>}{(userRole === 'pro') && <button onClick={handleUpgradeClick} className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-4 py-2 rounded-lg hover:opacity-90 transition flex items-center gap-2"><Crown className="w-4 h-4" /> Upgrade ke Premium ($5)</button>}</div></div>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-primary" /> {t('quick_access')}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{menuItems.map((item, idx) => {
             const isAvailable = typeof item.isAvailable === 'function' ? item.isAvailable(userRole) : item.isAvailable
