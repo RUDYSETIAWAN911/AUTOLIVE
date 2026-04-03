@@ -5,7 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useTheme } from '../contexts/ThemeContext'
 import ThemeToggle from '../components/ThemeToggle'
 import LanguageToggle from '../components/LanguageToggle'
-import { Upload, TrendingUp, Edit, Zap, Shield, Clock, Video, UserPlus, Mail, Lock, Eye, EyeOff, LogIn, X, Crown, Star, Shield as ShieldIcon, User, CheckCircle } from 'lucide-react'
+import { Upload, TrendingUp, Edit, Zap, Shield, Clock, Video, UserPlus, Mail, Lock, Eye, EyeOff, LogIn, X, Crown, Star, Shield as ShieldIcon, User } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const Login = () => {
@@ -15,10 +15,8 @@ const Login = () => {
   const [logoUrl, setLogoUrl] = useState(null)
   const [websiteName, setWebsiteName] = useState('AUTOLIVE')
   const [showRoleModal, setShowRoleModal] = useState(false)
-  const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [pendingUser, setPendingUser] = useState(null)
-  const [selectedRole, setSelectedRole] = useState('free')
-  const [adminEmail, setAdminEmail] = useState('')
+  const [selectedRole, setSelectedRole] = useState('admin')
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -26,6 +24,7 @@ const Login = () => {
   const navigate = useNavigate()
   const { t, language } = useLanguage()
 
+  // Daftar email admin dan password
   const adminEmails = [
     'autolive1.0.0@gmail.com',
     'marga.jaya.bird.shop@gmail.com',
@@ -40,28 +39,11 @@ const Login = () => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
-        const userRole = localStorage.getItem('user_role')
-        console.log('Session found, user_role:', userRole)
-        
-        if (userRole === 'admin') {
-          console.log('Redirecting to /admin')
-          navigate('/admin', { replace: true })
-        } else if (userRole === 'premium' || userRole === 'pro' || userRole === 'free') {
-          console.log('Redirecting to /dashboard')
-          navigate('/dashboard', { replace: true })
+        // Langsung redirect tanpa cek database
+        if (adminEmails.includes(session.user.email)) {
+          navigate('/admin')
         } else {
-          // No role stored, check database
-          const { data: userData } = await supabase
-            .from('users')
-            .select('role, subscription')
-            .eq('id', session.user.id)
-            .single()
-          
-          if (userData?.role === 'admin') {
-            navigate('/admin', { replace: true })
-          } else {
-            navigate('/dashboard', { replace: true })
-          }
+          navigate('/dashboard')
         }
       }
     }
@@ -81,36 +63,19 @@ const Login = () => {
 
     setLoading(true)
     try {
-      // Cek apakah ini admin
+      // Cek apakah ini admin dengan password khusus
       if (adminEmails.includes(formData.email) && formData.password === adminPassword) {
-        // Login ke Supabase
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password
-        })
-        
-        if (error) {
-          // Jika belum punya akun, buat dulu
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: formData.email,
-            password: formData.password,
-            options: {
-              data: {
-                full_name: formData.email.split('@')[0]
-              }
-            }
-          })
-          
-          if (signUpError) throw signUpError
-        }
-        
-        setAdminEmail(formData.email)
-        setShowWelcomeModal(true)
+        // Admin login langsung, bypass database
+        toast.success('Selamat datang Admin!')
+        // Simpan session ke localStorage
+        localStorage.setItem('admin_logged_in', 'true')
+        localStorage.setItem('admin_email', formData.email)
+        navigate('/admin')
         setLoading(false)
         return
       }
 
-      // Login untuk user biasa
+      // Untuk user biasa, coba login ke Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password
@@ -118,6 +83,7 @@ const Login = () => {
 
       if (error) {
         if (error.message.includes('Invalid login credentials')) {
+          // Buat akun baru
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
             email: formData.email,
             password: formData.password,
@@ -131,8 +97,7 @@ const Login = () => {
           if (signUpError) throw signUpError
           
           if (signUpData.user) {
-            setPendingUser(signUpData.user)
-            setShowRoleModal(true)
+            toast.success('Akun berhasil dibuat! Silakan login.')
             setLoading(false)
             return
           }
@@ -141,38 +106,14 @@ const Login = () => {
       }
 
       if (data.user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('subscription')
-          .eq('id', data.user.id)
-          .single()
-        
-        const userSubscription = userData?.subscription || 'free'
-        localStorage.setItem('user_role', userSubscription)
-        toast.success(`Selamat datang ${userSubscription.toUpperCase()} User!`)
-        navigate('/dashboard', { replace: true })
+        toast.success(`Selamat datang ${data.user.email}!`)
+        navigate('/dashboard')
       }
     } catch (error) {
       console.error('Login error:', error)
       toast.error(error.message || 'Login gagal')
+    } finally {
       setLoading(false)
-    }
-  }
-
-  const handleAccessSelection = (role) => {
-    console.log('Selected role:', role)
-    setShowWelcomeModal(false)
-    localStorage.setItem('user_role', role)
-    localStorage.setItem('user_email', adminEmail)
-    
-    if (role === 'admin') {
-      toast.success('Masuk sebagai Admin')
-      console.log('Navigating to /admin')
-      navigate('/admin', { replace: true })
-    } else {
-      toast.success(`Masuk sebagai ${role.toUpperCase()} User`)
-      console.log('Navigating to /dashboard')
-      navigate('/dashboard', { replace: true })
     }
   }
 
@@ -185,7 +126,30 @@ const Login = () => {
     setLoading(true)
     
     try {
-      const finalRole = selectedRole
+      const isAdminEmail = adminEmails.includes(pendingUser.email)
+      let finalRole = selectedRole
+      
+      if (!isAdminEmail && finalRole === 'admin') {
+        toast.error('Anda tidak memiliki akses sebagai Admin')
+        setLoading(false)
+        return
+      }
+      
+      // Untuk admin, langsung redirect tanpa database
+      if (isAdminEmail) {
+        toast.success(`Akun ${finalRole.toUpperCase()} berhasil diaktifkan!`)
+        setShowRoleModal(false)
+        
+        if (finalRole === 'admin') {
+          navigate('/admin')
+        } else {
+          navigate('/dashboard')
+        }
+        setLoading(false)
+        return
+      }
+      
+      // Untuk user biasa, simpan ke database
       let subscriptionExpiry = null
       let needPayment = false
       
@@ -205,11 +169,12 @@ const Login = () => {
         
         setShowRoleModal(false)
         toast.info('Silakan lanjutkan ke pembayaran untuk mengaktifkan akun')
-        navigate('/payment', { replace: true })
+        navigate('/payment')
         setLoading(false)
         return
       }
       
+      // Simpan ke database untuk user free
       const { error } = await supabase
         .from('users')
         .upsert({
@@ -223,18 +188,19 @@ const Login = () => {
       
       if (error) {
         console.error('Save error:', error)
+        // Abaikan error database, tetap lanjutkan
+        toast.warning('Akun tetap dapat digunakan meskipun ada error')
       }
       
-      localStorage.setItem('user_role', 'free')
-      toast.success(`Akun FREE berhasil diaktifkan!`)
+      toast.success(`Akun ${finalRole.toUpperCase()} berhasil diaktifkan!`)
       setShowRoleModal(false)
-      navigate('/dashboard', { replace: true })
+      navigate('/dashboard')
       
     } catch (error) {
       console.error('Save role error:', error)
       toast.error('Terjadi kesalahan, tetapi Anda tetap bisa melanjutkan')
       setShowRoleModal(false)
-      navigate('/dashboard', { replace: true })
+      navigate('/dashboard')
     } finally {
       setLoading(false)
     }
@@ -348,104 +314,6 @@ const Login = () => {
         </div>
       </div>
       
-      {/* Welcome Modal untuk Admin */}
-      {showWelcomeModal && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-light-card dark:bg-dark-card rounded-xl max-w-md w-full p-6 text-center">
-            <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
-                <ShieldIcon className="w-8 h-8 text-primary" />
-              </div>
-            </div>
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
-              {language === 'id' ? 'Selamat Datang Admin!' : 'Welcome Admin!'}
-            </h2>
-            <p className="text-gray-500 dark:text-gray-400 mb-6">
-              {language === 'id' 
-                ? 'Silakan pilih akses yang akan Anda gunakan' 
-                : 'Please select the access you want to use'}
-            </p>
-            <p className="text-sm text-gray-400 mb-4">
-              {language === 'id' ? `Email: ${adminEmail}` : `Email: ${adminEmail}`}
-            </p>
-            <div className="space-y-3">
-              <button
-                onClick={() => handleAccessSelection('admin')}
-                className="w-full flex items-center justify-between p-4 rounded-lg border-2 border-purple-500 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition"
-              >
-                <div className="flex items-center gap-3">
-                  <ShieldIcon className="w-6 h-6 text-purple-500" />
-                  <div className="text-left">
-                    <div className="font-semibold text-gray-800 dark:text-white">
-                      {language === 'id' ? 'Akses Admin' : 'Admin Access'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {language === 'id' ? 'Akses penuh ke Panel Admin' : 'Full access to Admin Panel'}
-                    </div>
-                  </div>
-                </div>
-                <CheckCircle className="w-5 h-5 text-purple-500" />
-              </button>
-              
-              <button
-                onClick={() => handleAccessSelection('premium')}
-                className="w-full flex items-center justify-between p-4 rounded-lg border-2 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 transition"
-              >
-                <div className="flex items-center gap-3">
-                  <Crown className="w-6 h-6 text-yellow-500" />
-                  <div className="text-left">
-                    <div className="font-semibold text-gray-800 dark:text-white">
-                      {language === 'id' ? 'Akses Premium' : 'Premium Access'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {language === 'id' ? 'Akses semua fitur lengkap' : 'Full feature access'}
-                    </div>
-                  </div>
-                </div>
-                <CheckCircle className="w-5 h-5 text-yellow-500" />
-              </button>
-              
-              <button
-                onClick={() => handleAccessSelection('pro')}
-                className="w-full flex items-center justify-between p-4 rounded-lg border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition"
-              >
-                <div className="flex items-center gap-3">
-                  <Star className="w-6 h-6 text-blue-500" />
-                  <div className="text-left">
-                    <div className="font-semibold text-gray-800 dark:text-white">
-                      {language === 'id' ? 'Akses Pro' : 'Pro Access'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {language === 'id' ? 'Akses semua fitur kecuali jadwal' : 'All features except scheduler'}
-                    </div>
-                  </div>
-                </div>
-                <CheckCircle className="w-5 h-5 text-blue-500" />
-              </button>
-              
-              <button
-                onClick={() => handleAccessSelection('free')}
-                className="w-full flex items-center justify-between p-4 rounded-lg border-2 border-gray-500 bg-gray-50 dark:bg-gray-900/20 hover:bg-gray-100 dark:hover:bg-gray-900/40 transition"
-              >
-                <div className="flex items-center gap-3">
-                  <User className="w-6 h-6 text-gray-500" />
-                  <div className="text-left">
-                    <div className="font-semibold text-gray-800 dark:text-white">
-                      {language === 'id' ? 'Akses Free Trial' : 'Free Trial Access'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {language === 'id' ? 'Akses fitur terbatas 1 hari' : 'Limited features for 1 day'}
-                    </div>
-                  </div>
-                </div>
-                <CheckCircle className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Feature Detail Modal */}
       {selectedFeature && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setSelectedFeature(null)}>
           <div className="bg-light-card dark:bg-dark-card rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
@@ -462,7 +330,6 @@ const Login = () => {
         </div>
       )}
       
-      {/* Role Selection Modal untuk User Baru */}
       {showRoleModal && pendingUser && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-light-card dark:bg-dark-card rounded-xl max-w-md w-full p-6">
@@ -472,6 +339,12 @@ const Login = () => {
             </div>
             <p className="text-gray-500 mb-4">Email: {pendingUser.email}</p>
             
+            {adminEmails.includes(pendingUser.email) && (
+              <div className="mb-4 p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                <p className="text-sm text-purple-600 dark:text-purple-400 flex items-center gap-2"><ShieldIcon className="w-4 h-4" />✅ {language === 'id' ? 'Anda adalah Admin. Bisa memilih role apa saja tanpa bayar!' : 'You are Admin. Can choose any role for free!'}</p>
+              </div>
+            )}
+            
             <div className="space-y-3">
               <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800">
                 <input type="radio" name="role" value="free" checked={selectedRole === 'free'} onChange={() => setSelectedRole('free')} />
@@ -479,11 +352,15 @@ const Login = () => {
               </label>
               <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800">
                 <input type="radio" name="role" value="pro" checked={selectedRole === 'pro'} onChange={() => setSelectedRole('pro')} />
-                <div><div className="font-semibold flex items-center gap-2"><Star className="w-4 h-4 text-blue-500" /> Pro (Rp 99.000/{language === 'id' ? 'bulan' : 'month'})</div><div className="text-xs text-gray-500">💳 {language === 'id' ? 'Perlu pembayaran' : 'Payment required'}</div></div>
+                <div><div className="font-semibold flex items-center gap-2"><Star className="w-4 h-4 text-blue-500" /> Pro (Rp 99.000/{language === 'id' ? 'bulan' : 'month'})</div><div className="text-xs text-gray-500">{adminEmails.includes(pendingUser.email) ? (language === 'id' ? '✅ Gratis untuk Admin' : '✅ Free for Admin') : (language === 'id' ? '💳 Perlu pembayaran' : '💳 Payment required')}</div></div>
               </label>
               <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800">
                 <input type="radio" name="role" value="premium" checked={selectedRole === 'premium'} onChange={() => setSelectedRole('premium')} />
-                <div><div className="font-semibold flex items-center gap-2"><Crown className="w-4 h-4 text-yellow-500" /> Premium (Rp 199.000/{language === 'id' ? 'bulan' : 'month'})</div><div className="text-xs text-gray-500">💳 {language === 'id' ? 'Perlu pembayaran' : 'Payment required'}</div></div>
+                <div><div className="font-semibold flex items-center gap-2"><Crown className="w-4 h-4 text-yellow-500" /> Premium (Rp 199.000/{language === 'id' ? 'bulan' : 'month'})</div><div className="text-xs text-gray-500">{adminEmails.includes(pendingUser.email) ? (language === 'id' ? '✅ Gratis untuk Admin' : '✅ Free for Admin') : (language === 'id' ? '💳 Perlu pembayaran' : '💳 Payment required')}</div></div>
+              </label>
+              <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer ${adminEmails.includes(pendingUser.email) ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-300 dark:border-purple-700' : 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-gray-800'}`}>
+                <input type="radio" name="role" value="admin" checked={selectedRole === 'admin'} onChange={() => setSelectedRole('admin')} disabled={!adminEmails.includes(pendingUser.email)} />
+                <div><div className="font-semibold flex items-center gap-2"><ShieldIcon className="w-4 h-4 text-purple-500" /> Admin</div><div className="text-xs text-gray-500">{adminEmails.includes(pendingUser.email) ? (language === 'id' ? 'Akses penuh ke semua fitur + Panel Admin' : 'Full access + Admin Panel') : (language === 'id' ? 'Hanya untuk email terdaftar' : 'Only for registered emails')}</div></div>
               </label>
             </div>
             
